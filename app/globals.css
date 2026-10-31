@@ -1,0 +1,91 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --font-sans: var(--font-dm-sans), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-cormorant), ui-serif, Georgia, serif;
+  --color-gold: var(--gold);
+  --color-gold-foreground: var(--gold-foreground);
+  --color-ivory: var(--ivory);
+  --color-maroon-deep: var(--maroon-deep);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+}
+
+:root {
+  color-scheme: light;
+  --background: #fbf7f0;
+  --foreground: #2a1517;
+  --card: #fffdf8;
+  --card-foreground: #2a1517;
+  --popover: #fffdf8;
+  --popover-foreground: #2a1517;
+  --primary: #7a1f2b;
+  --primary-foreground: #fbf7f0;
+  --secondary: #f3eadb;
+  --secondary-foreground: #4a2328;
+  --muted: #f1e8d9;
+  --muted-foreground: #6e5a52;
+  --accent: #f6ecd8;
+  --accent-foreground: #5a1620;
+  --destructive: #b42318;
+  --border: #e6d9c4;
+  --input: #e1d2ba;
+  --ring: #b8893b;
+  --gold: #b8893b;
+  --gold-foreground: #2a1517;
+  --ivory: #fffdf8;
+  --maroon-deep: #4a1018;
+  --radius: 0.5rem;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground font-sans;
+  }
+  h1,
+  h2,
+  h3 {
+    @apply font-serif;
+  }
+}
+
+@utility pattern-band {
+  background-color: var(--primary);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='12' viewBox='0 0 24 12'%3E%3Cpath d='M0 12 L6 4 L12 12 L18 4 L24 12 Z' fill='%23b8893b'/%3E%3Cpath d='M6 4 L9 0 L12 4 Z M18 4 L21 0 L24 4 Z' fill='%23f3eadb'/%3E%3C/svg%3E");
+  background-repeat: repeat-x;
+  background-position: bottom;
+  background-size: 24px 12px;
+}
+
+@utility pattern-weave {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32' viewBox='0 0 32 32'%3E%3Cpath d='M16 2 L30 16 L16 30 L2 16 Z' fill='none' stroke='%23b8893b' stroke-opacity='0.18' stroke-width='1'/%3E%3Cpath d='M16 10 L22 16 L16 22 L10 16 Z' fill='%23b8893b' fill-opacity='0.08'/%3E%3C/svg%3E");
+  background-size: 32px 32px;
+}
