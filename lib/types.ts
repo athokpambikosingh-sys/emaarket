@@ -10,6 +10,7 @@ export type Category = {
 export type Artisan = {
   id: string
   slug: string
+  isDemo: boolean
   name: string
   location: string
   district: string
@@ -31,6 +32,7 @@ export type Artisan = {
 export type Product = {
   id: string
   slug: string
+  isDemo: boolean
   name: string
   category: CategoryId
   price: number

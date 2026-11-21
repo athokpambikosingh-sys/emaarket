@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { AuthCard } from '../login/page'
+import { AuthCard } from '@/components/auth/auth-card'
 import { createClient } from '@/lib/supabase/client'
 
 export default function UpdatePasswordPage() {

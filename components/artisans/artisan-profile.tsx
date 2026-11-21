@@ -10,11 +10,13 @@ import { ProductCard } from '../product-card'
 import { Badge, buttonClass, Rating } from '../shared'
 
 export function ArtisanProfile({ artisanId }: { artisanId: string }) {
-  const { getArtisan, artisans, products, startConversation, loading } = useStore()
+  const { getArtisan, artisans, products, startConversation, catalogLoading, catalogError, retry } = useStore()
   const router = useRouter()
   const artisan = getArtisan(artisanId) || artisans.find((item) => item.slug === artisanId)
-  if (loading) return <div className="mx-auto max-w-7xl px-4 py-16 text-center text-sm text-muted-foreground" role="status">Loading artisan profile…</div>
+  if (catalogLoading) return <div className="mx-auto max-w-7xl px-4 py-16 text-center text-sm text-muted-foreground" role="status">Loading artisan profile…</div>
+  if (catalogError) return <div className="mx-auto max-w-7xl px-4 py-16 text-center text-sm text-destructive" role="alert">Could not load artisan profile: {catalogError}<br /><button type="button" onClick={retry} className="mt-3 underline">Try again</button></div>
   if (!artisan) return null
+  const displayBio = artisan.bio
   const listings = products.filter((p) => p.artisanId === artisan.id)
 
   async function chat() {
@@ -50,7 +52,12 @@ export function ArtisanProfile({ artisanId }: { artisanId: string }) {
               <Rating value={artisan.rating} className="[&_span]:text-primary-foreground" />
               <span>{artisan.experienceYears} years of craft</span>
             </div>
-            <p className="mt-6 max-w-2xl text-pretty text-lg leading-relaxed text-primary-foreground/85">{artisan.bio}</p>
+            <p className="mt-6 max-w-2xl text-pretty text-lg leading-relaxed text-primary-foreground/85">{displayBio}</p>
+            {artisan.isDemo && (
+              <p className="mt-4 inline-flex rounded-full border border-gold/60 px-3 py-1 text-xs font-medium text-gold">
+                Demo artisan - fictional profile
+              </p>
+            )}
             <div className="mt-6 flex flex-wrap gap-2">
               {artisan.specialization.map((s) => (
                 <span key={s} className="rounded-full border border-primary-foreground/25 px-3 py-1 text-xs">
@@ -59,15 +66,23 @@ export function ArtisanProfile({ artisanId }: { artisanId: string }) {
               ))}
             </div>
             <div className="mt-8 flex flex-wrap gap-3">
-              <button type="button" onClick={chat} className={buttonClass.gold}>
-                <MessageCircle className="size-4" /> Message {artisan.name.split(' ')[0]}
-              </button>
-              <Link
-                href={`/bulk-orders?artisan=${artisan.id}`}
-                className="inline-flex items-center justify-center rounded-full border border-primary-foreground/30 px-6 py-3 text-sm font-medium hover:border-gold hover:text-gold"
-              >
-                Request custom order
-              </Link>
+              {artisan.isDemo ? (
+                <p className="text-sm text-primary-foreground/80">
+                  Messaging and custom orders are disabled for demo artisans.
+                </p>
+              ) : (
+                <>
+                  <button type="button" onClick={chat} className={buttonClass.gold}>
+                    <MessageCircle className="size-4" /> Message {artisan.name.split(' ')[0]}
+                  </button>
+                  <Link
+                    href={`/bulk-orders?artisan=${artisan.id}`}
+                    className="inline-flex items-center justify-center rounded-full border border-primary-foreground/30 px-6 py-3 text-sm font-medium hover:border-gold hover:text-gold"
+                  >
+                    Request custom order
+                  </Link>
+                </>
+              )}
             </div>
           </div>
         </div>
@@ -75,8 +90,7 @@ export function ArtisanProfile({ artisanId }: { artisanId: string }) {
 
       <div className="mx-auto grid max-w-7xl gap-12 px-4 py-16 md:px-6 lg:grid-cols-[1fr_320px]">
         <article>
-          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-gold">Her story</p>
-          <h2 className="mt-2 text-4xl font-semibold">In her own words</h2>
+          <p className="text-xs font-semibold uppercase tracking-[0.25em] text-gold">My Story</p>
           <p className="mt-4 whitespace-pre-line text-pretty text-lg leading-relaxed text-muted-foreground first-letter:float-left first-letter:mr-2 first-letter:font-serif first-letter:text-6xl first-letter:leading-none first-letter:text-primary">
             {artisan.story}
           </p>

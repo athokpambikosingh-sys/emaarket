@@ -20,7 +20,7 @@ export function ShopView({
   initialQuery: string
   initialCategory: CategoryId | 'all'
 }) {
-  const { products, artisans, loading, catalogError } = useStore()
+  const { products, artisans, catalogLoading, catalogError, retry } = useStore()
   const [query, setQuery] = useState(initialQuery)
   const [category, setCategory] = useState<CategoryId | 'all'>(
     categories.some((c) => c.id === initialCategory) ? initialCategory : 'all',
@@ -70,7 +70,7 @@ export function ShopView({
     Number(bulkOnly) +
     Number(inStock)
 
-  if (loading) return <div className="mx-auto max-w-7xl px-4 py-16 text-center text-sm text-muted-foreground" role="status" aria-live="polite">Loading products…</div>
+  if (catalogLoading) return <div className="mx-auto max-w-7xl px-4 py-16 text-center text-sm text-muted-foreground" role="status" aria-live="polite">Loading products…</div>
 
   function reset() {
     setQuery('')
@@ -223,7 +223,7 @@ export function ShopView({
             </>
           )}
         </p>
-        {catalogError && <p role="alert" className="mt-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{catalogError}</p>}
+        {catalogError && <div role="alert" className="mt-3 rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"><p>{catalogError}</p><button type="button" onClick={retry} className="mt-2 font-medium underline">Try again</button></div>}
 
         {results.length > 0 ? (
           <div className="mt-6 grid grid-cols-2 gap-x-4 gap-y-10 md:grid-cols-3 md:gap-x-6">

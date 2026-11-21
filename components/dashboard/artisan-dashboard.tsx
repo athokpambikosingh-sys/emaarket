@@ -16,10 +16,11 @@ const tabs = ['Overview', 'Products', 'Orders', 'Messages', 'Bulk requests'] as 
 type Tab = (typeof tabs)[number]
 
 export function ArtisanDashboard() {
-  const { getArtisan, conversations, bulkRequests, currentArtisanId, uploadArtisanImage, loading } = useStore()
+  const { getArtisan, conversations, bulkRequests, currentArtisanId, uploadArtisanImage, loading, catalogError, retry } = useStore()
   const [tab, setTab] = useState<Tab>('Overview')
   const artisan = currentArtisanId ? getArtisan(currentArtisanId) : undefined
   if (loading) return <div className="mx-auto max-w-7xl px-4 py-16 text-center text-sm text-muted-foreground" role="status" aria-live="polite">Loading your artisan dashboard…</div>
+  if (catalogError) return <div className="mx-auto max-w-7xl px-4 py-16 text-center text-sm text-destructive" role="alert">Could not load your dashboard: {catalogError}<br /><button type="button" onClick={retry} className="mt-3 underline">Try again</button></div>
   if (!artisan) return null
 
   const inbox = conversations.filter((c) => c.artisanId === artisan.id)

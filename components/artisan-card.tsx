@@ -18,6 +18,11 @@ export function ArtisanCard({ artisan, productCount }: { artisan: Artisan; produ
           sizes="(min-width: 1024px) 25vw, (min-width: 640px) 50vw, 100vw"
           className="object-cover transition-transform duration-500 group-hover:scale-105"
         />
+        {artisan.isDemo && (
+          <span className="absolute left-3 top-3 rounded-full bg-card px-2.5 py-0.5 text-xs font-medium text-foreground">
+            Demo artisan - fictional profile
+          </span>
+        )}
       </div>
       <div className="flex flex-1 flex-col gap-2 p-5">
         <div className="flex items-center gap-1.5">

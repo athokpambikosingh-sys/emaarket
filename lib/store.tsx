@@ -12,7 +12,7 @@ const configured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.N
 type StoreValue = {
   products: Product[]; artisans: Artisan[]; cart: CartItem[]; wishlist: string[]; orders: Order[]
   conversations: Conversation[]; bulkRequests: BulkRequest[]; toasts: Toast[]; currentUser: StoreUser | null
-  currentArtisanId: string | null; loading: boolean; catalogError: string
+  currentArtisanId: string | null; loading: boolean; catalogLoading: boolean; catalogError: string; retry: () => void
   getProduct: (id: string) => Product | undefined; getArtisan: (id: string) => Artisan | undefined
   addToCart: (productId: string, quantity?: number) => void; updateCartQuantity: (productId: string, quantity: number) => void
   removeFromCart: (productId: string) => void; toggleWishlist: (productId: string) => void
@@ -22,8 +22,8 @@ type StoreValue = {
   markConversationRead: (conversationId: string) => void
   submitBulkRequest: (request: Omit<BulkRequest, 'id' | 'status' | 'date'>) => Promise<BulkRequest | null>
   respondToBulkRequest: (id: string, amount: number, note: string) => void
-  addProduct: (product: Omit<Product, 'id' | 'slug' | 'rating' | 'reviews'>, imageFile?: File) => Promise<Product | null>
-  updateProduct: (id: string, patch: Partial<Product>, imageFile?: File) => Promise<boolean>
+  addProduct: (product: Omit<Product, 'id' | 'slug' | 'rating' | 'reviews' | 'isDemo'>, imageFile?: File) => Promise<Product | null>
+  updateProduct: (id: string, patch: Partial<Omit<Product, 'isDemo'>>, imageFile?: File) => Promise<boolean>
   deleteProduct: (id: string) => void; updateOrderStatus: (id: string, status: OrderStatus) => void
   submitReview: (productId: string, rating: number, title: string, body: string) => Promise<void>
   uploadArtisanImage: (file: File) => Promise<void>; notify: (message: string) => void
@@ -31,6 +31,12 @@ type StoreValue = {
 const StoreContext = createContext<StoreValue | null>(null)
 
 function slugify(value: string) { return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') }
+function isMissingDemoMarkerColumn(error: { code?: string; message: string; details?: string | null; hint?: string | null }) {
+  const mentionsMarker = [error.message, error.details, error.hint].some((value) => value?.includes('demo_seed_key'))
+  return mentionsMarker && (error.code === '42703' || error.code === 'PGRST204')
+}
+function isDemoArtisanSlug(slug: string) { return /^demo-artisan-(0[1-9]|10)$/.test(slug) }
+function isDemoProductSlug(slug: string) { return slug.startsWith('demo-seed-') }
 function titleStatus(value: string): OrderStatus { return (value[0].toUpperCase() + value.slice(1)) as OrderStatus }
 function bulkStatus(value: string): BulkRequest['status'] {
   const statuses: Record<string, BulkRequest['status']> = { submitted: 'Submitted', quoted: 'Quoted', accepted: 'Accepted', declined: 'Declined' }
@@ -53,9 +59,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [currentUser, setCurrentUser] = useState<StoreUser | null>(null)
   const [currentArtisanId, setCurrentArtisanId] = useState<string | null>(null)
   const [loading, setLoading] = useState(configured)
+  const [catalogLoading, setCatalogLoading] = useState(configured)
   const [catalogError, setCatalogError] = useState(configured ? '' : 'Supabase is not configured. Add the project URL and publishable key to load marketplace listings.')
   const [toasts, setToasts] = useState<Toast[]>([])
   const [reload, setReload] = useState(0)
+  const loadRef = useRef<() => void>(() => {})
+  const previousReload = useRef(reload)
   const userRef = useRef<StoreUser | null>(null)
   const artisanRef = useRef<string | null>(null)
   const productsRef = useRef(products)
@@ -80,15 +89,57 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (!configured) return
     const supabase = createClient()
     let alive = true
-    let channel: ReturnType<typeof supabase.channel> | undefined
+    let privateChannel: ReturnType<typeof supabase.channel> | null = null
+    let privateChannelUserId: string | null = null
+    const channel = supabase.channel('emaarket-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, scheduleReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, scheduleReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'product_images' }, scheduleReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'artisan_profiles' }, scheduleReload)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reviews' }, scheduleReload)
+    channel.subscribe()
+    function syncPrivateChannel(userId: string | null) {
+      if (privateChannelUserId === userId) return
+      privateChannelUserId = userId
+      if (privateChannel) void supabase.removeChannel(privateChannel)
+      privateChannel = userId
+        ? supabase.channel(`emaarket-private-${userId}`)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, scheduleReload)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations' }, scheduleReload)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, scheduleReload)
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'bulk_order_requests' }, scheduleReload)
+          .subscribe()
+        : null
+    }
     async function load() {
       setLoading(true)
-      const { data: { user }, error: authError } = await supabase.auth.getUser()
+      setCatalogLoading(true)
+      setCatalogError('')
+      try {
+      const catalogPromise = Promise.all([
+        supabase.from('products').select('id, slug, name, category_id, price, original_price, description, artisan_id, material, dimensions, care_instructions, customizable, bulk_available, min_bulk_quantity, featured').order('created_at', { ascending: false }),
+        supabase.from('inventory').select('product_id, quantity, reserved'),
+        supabase.from('product_images').select('product_id, storage_path, sort_order').order('sort_order'),
+        supabase.from('artisan_profiles').select('*'),
+        supabase.from('reviews').select('product_id, rating'),
+      ])
+      const authPromise = supabase.auth.getUser()
+      const { data: { user }, error: authError } = await authPromise
       if (!alive) return
+      syncPrivateChannel(user?.id ?? null)
       if (authError) notify(authError.message)
-      let appUser: StoreUser | null = null
-      let myArtisanId: string | null = null
-      if (user) {
+      const accountPromise = user ? Promise.all([
+        supabase.from('carts').select('id').eq('user_id', user.id).maybeSingle(),
+        supabase.from('wishlists').select('product_id').eq('user_id', user.id),
+        supabase.from('orders').select('*').order('created_at', { ascending: false }),
+        supabase.from('order_items').select('*'),
+        supabase.from('conversations').select('*').order('updated_at', { ascending: false }),
+        supabase.from('bulk_order_requests').select('*').order('created_at', { ascending: false }),
+      ]) : null
+      const identityPromise = (async () => {
+        let appUser: StoreUser | null = null
+        let myArtisanId: string | null = null
+        if (user) {
         const { data: profile } = await supabase.from('profiles').select('full_name, role').eq('id', user.id).maybeSingle()
         if (profile) {
           appUser = { id: user.id, name: profile.full_name || user.user_metadata?.full_name || user.email || 'Member', email: user.email || '', role: profile.role }
@@ -102,17 +153,26 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
             myArtisanId = artisan?.id ?? null
           }
         }
-      }
-      setCurrentUser(appUser)
-      setCurrentArtisanId(myArtisanId)
+        }
+        return { appUser, myArtisanId }
+      })()
+      const catalogResults = await catalogPromise
+      const [productResult, inventoryResult, imageResult, artisanResult, reviewResult] = catalogResults
 
-      const [productResult, inventoryResult, imageResult, artisanResult, reviewResult] = await Promise.all([
-        supabase.from('products').select('*').order('created_at', { ascending: false }),
-        supabase.from('inventory').select('product_id, quantity, reserved'),
-        supabase.from('product_images').select('product_id, storage_path, sort_order').order('sort_order'),
-        supabase.from('artisan_profiles').select('*'),
-        supabase.from('reviews').select('product_id, rating'),
-      ])
+      let productDemoMarkerError = ''
+      const productDemoMarkers = new Map<string, string | null>()
+      if (productResult.data?.length) {
+        const { data: markerRows, error: markerError } = await supabase
+          .from('products')
+          .select('id, demo_seed_key')
+          .in('id', productResult.data.map((product) => product.id))
+        if (markerError) {
+          if (!isMissingDemoMarkerColumn(markerError)) productDemoMarkerError = markerError.message
+        } else {
+          for (const row of markerRows || []) productDemoMarkers.set(row.id, row.demo_seed_key)
+        }
+      }
+
       const inventory = new Map((inventoryResult.data || []).map((row) => [row.product_id, row]))
       const images = new Map<string, string>()
       for (const row of imageResult.data || []) if (!images.has(row.product_id)) images.set(row.product_id, storageUrl(row.storage_path))
@@ -125,8 +185,12 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         artisanRatings.set(product.artisan_id, values)
       }
       const mappedArtisans: Artisan[] = (artisanResult.data || []).map((a) => ({
-        id: a.id, slug: a.slug, name: a.display_name, location: a.location, district: a.district, craft: a.craft,
-        specialization: a.specialization || [], experienceYears: a.experience_years, bio: a.bio, story: a.story,
+        id: a.id, slug: a.slug, isDemo: Boolean(a.demo_seed_key) || isDemoArtisanSlug(a.slug), name: a.display_name, location: a.location, district: a.district, craft: a.craft,
+        specialization: a.specialization || [], experienceYears: a.experience_years,
+        bio: a.bio?.startsWith('[DEMO PROFILE]')
+          ? '[DEMO PROFILE] Sample artisan profile.'
+          : a.bio,
+        story: a.story,
         image: storageUrl(a.avatar_url), rating: artisanRatings.get(a.id)?.length ? artisanRatings.get(a.id)!.reduce((sum, score) => sum + score, 0) / artisanRatings.get(a.id)!.length : 0, languages: a.languages || [], phone: a.phone || '', email: '',
         verified: a.verified, cooperative: a.cooperative || undefined, joined: a.created_at,
       }))
@@ -134,7 +198,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         const stockRow = inventory.get(p.id)
         const productRatings = ratings.get(p.id) || []
         return {
-          id: p.id, slug: p.slug, name: p.name, category: p.category_id, price: Number(p.price),
+          id: p.id, slug: p.slug, isDemo: Boolean(productDemoMarkers.get(p.id)) || isDemoProductSlug(p.slug), name: p.name, category: p.category_id, price: Number(p.price),
           originalPrice: p.original_price ? Number(p.original_price) : undefined,
           image: images.get(p.id) || '/placeholder.svg', description: p.description, artisanId: p.artisan_id,
           rating: productRatings.length ? productRatings.reduce((sum, val) => sum + val, 0) / productRatings.length : 0,
@@ -145,15 +209,20 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       })
       setArtisans(mappedArtisans)
       setProducts(mappedProducts)
-      const loadError = productResult.error || inventoryResult.error || imageResult.error || artisanResult.error || reviewResult.error
-      setCatalogError(loadError?.message || '')
-      if (loadError) notify(loadError.message)
+      setCatalogLoading(false)
+      const { appUser, myArtisanId } = await identityPromise
+      setCurrentUser(appUser)
+      setCurrentArtisanId(myArtisanId)
+      const loadError = productResult.error || productDemoMarkerError || inventoryResult.error || imageResult.error || artisanResult.error || reviewResult.error
+      setCatalogError(typeof loadError === 'string' ? loadError : loadError?.message || '')
+      if (loadError) notify(typeof loadError === 'string' ? loadError : loadError.message)
 
       if (user) {
         const validProductIds = new Set(mappedProducts.map((product) => product.id))
         const guestCart: CartItem[] = (typeof window === 'undefined' ? [] : JSON.parse(localStorage.getItem('emaarket-cart') || '[]')).filter((item: CartItem) => validProductIds.has(item.productId))
         const guestWishlist: string[] = (typeof window === 'undefined' ? [] : JSON.parse(localStorage.getItem('emaarket-wishlist') || '[]')).filter((id: string) => validProductIds.has(id))
-        const { data: cartRow } = await supabase.from('carts').select('id').eq('user_id', user.id).maybeSingle()
+        const [cartLookup, wish, orderRows, itemRows, conversationRows, bulkRows] = await accountPromise!
+        const cartRow = cartLookup.data
         if (cartRow) {
           const { data: cartRows } = await supabase.from('cart_items').select('product_id, quantity').eq('cart_id', cartRow.id)
           const merged = new Map<string, number>((cartRows || []).map((row) => [row.product_id, row.quantity]))
@@ -169,13 +238,6 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           }
         } else setCart([])
         if (typeof window !== 'undefined') localStorage.removeItem('emaarket-cart')
-        const [wish, orderRows, itemRows, conversationRows, bulkRows] = await Promise.all([
-          supabase.from('wishlists').select('product_id').eq('user_id', user.id),
-          supabase.from('orders').select('*').order('created_at', { ascending: false }),
-          supabase.from('order_items').select('*'),
-          supabase.from('conversations').select('*').order('updated_at', { ascending: false }),
-          supabase.from('bulk_order_requests').select('*').order('created_at', { ascending: false }),
-        ])
         const savedIds = [...new Set([...(wish.data || []).map((row) => row.product_id), ...guestWishlist])]
         setWishlist(savedIds)
         if (guestWishlist.length) await supabase.from('wishlists').upsert(guestWishlist.map((product_id) => ({ user_id: user.id, product_id })), { onConflict: 'user_id,product_id' })
@@ -186,10 +248,18 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           total: Number(o.total), status: titleStatus(o.status), city: o.shipping_address?.city || '',
         })))
         const conversationData = conversationRows.data || []
-        const messageResults = await Promise.all(conversationData.map((c) => supabase.from('messages').select('*').eq('conversation_id', c.id).order('created_at')))
+        const { data: allMessages } = conversationData.length
+          ? await supabase.from('messages').select('*').in('conversation_id', conversationData.map((c) => c.id)).order('created_at')
+          : { data: [] }
+        const messagesByConversation = new Map<string, typeof allMessages>()
+        for (const message of allMessages || []) {
+          const list = messagesByConversation.get(message.conversation_id) || []
+          list.push(message)
+          messagesByConversation.set(message.conversation_id, list)
+        }
         setConversations(conversationData.map((c, index) => {
           const artisan = mappedArtisans.find((a) => a.id === c.artisan_id)
-          const msgs = messageResults[index].data || []
+          const msgs = messagesByConversation.get(c.id) || []
           const artisanUserId = (artisanResult.data || []).find((a) => a.id === c.artisan_id)?.user_id
           const readAt = c.customer_id === user.id ? c.customer_read_at : c.artisan_read_at
           return {
@@ -210,25 +280,37 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         setCart(typeof window === 'undefined' ? [] : JSON.parse(localStorage.getItem('emaarket-cart') || '[]'))
         setOrders([]); setConversations([]); setBulkRequests([])
       }
-      if (alive) setLoading(false)
-
-      let live = supabase.channel(`emaarket-live-${user?.id || 'public'}`)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'products' }, scheduleReload)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'inventory' }, scheduleReload)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'product_images' }, scheduleReload)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'artisan_profiles' }, scheduleReload)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'reviews' }, scheduleReload)
-      if (user) live = live
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, scheduleReload)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'conversations' }, scheduleReload)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'orders' }, scheduleReload)
-        .on('postgres_changes', { event: '*', schema: 'public', table: 'bulk_order_requests' }, scheduleReload)
-      channel = live.subscribe()
+      } catch (reason) {
+        const message = reason instanceof Error ? reason.message : 'Marketplace data could not be loaded.'
+        if (alive) {
+          setCatalogError(message)
+          notify(message)
+        }
+    } finally {
+        if (alive) setCatalogLoading(false)
+        if (alive) setLoading(false)
+      }
     }
+    loadRef.current = () => { void load() }
     void load()
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(() => { channel?.unsubscribe(); void load() })
-    return () => { alive = false; subscription.unsubscribe(); channel?.unsubscribe() }
-  }, [notify, reload, scheduleReload])
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event) => {
+      if (event !== 'INITIAL_SESSION') void load()
+    })
+    return () => {
+      alive = false
+      loadRef.current = () => {}
+      if (reloadTimer.current) clearTimeout(reloadTimer.current)
+      subscription.unsubscribe()
+      void supabase.removeChannel(channel)
+      if (privateChannel) void supabase.removeChannel(privateChannel)
+    }
+  }, [notify, scheduleReload])
+
+  useEffect(() => {
+    if (previousReload.current === reload) return
+    previousReload.current = reload
+    loadRef.current()
+  }, [reload])
 
   const getProduct = useCallback((id: string) => products.find((product) => product.id === id), [products])
   const getArtisan = useCallback((id: string) => artisans.find((artisan) => artisan.id === id), [artisans])
@@ -257,6 +339,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const addToCart = useCallback((productId: string, quantity = 1) => {
     const product = productsRef.current.find((p) => p.id === productId)
+    if (product?.isDemo) {
+      notify('Demo listings are not for sale.')
+      return
+    }
     if (!product || product.stock <= 0) return
     const previous = cart
     const found = previous.find((item) => item.productId === productId)
@@ -266,11 +352,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const updateCartQuantity = useCallback((productId: string, quantity: number) => {
     const product = productsRef.current.find((p) => p.id === productId)
+    if (product?.isDemo) return
     void syncCart(cart.map((item) => item.productId === productId ? { ...item, quantity: Math.max(1, Math.min(product?.stock || 1, quantity)) } : item))
   }, [cart, syncCart])
   const removeFromCart = useCallback((productId: string) => void syncCart(cart.filter((item) => item.productId !== productId)), [cart, syncCart])
 
   const toggleWishlist = useCallback((productId: string) => {
+    if (productsRef.current.find((product) => product.id === productId)?.isDemo) {
+      notify('Demo listings cannot be saved.')
+      return
+    }
     const next = wishlist.includes(productId) ? wishlist.filter((id) => id !== productId) : [...wishlist, productId]
     setWishlist(next)
     if (configured && userRef.current) {
@@ -292,6 +383,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       return null
     }
     if (!userRef.current) { notify('Please sign in before placing an order.'); return null }
+    if (cart.some((item) => getProduct(item.productId)?.isDemo)) {
+      notify('Remove demo listings from your cart before checkout.')
+      return null
+    }
     const supabase = createClient()
     const { data, error } = await supabase.rpc('checkout_cart', { shipping_name: shipping.name, shipping_phone: shipping.phone, shipping_address: { address: shipping.address, city: shipping.city, pin: shipping.pin } })
     if (error) { notify(error.message); return null }
@@ -306,16 +401,35 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       notify('Configure Supabase to message artisans.')
       return ''
     }
-    if (!user) { notify('Sign in to message artisans.'); return '' }
     const supabase = createClient()
-    let query = supabase.from('conversations').select('id').eq('customer_id', user.id).eq('artisan_id', artisanId)
+    const { data: { user: authenticatedUser }, error: authError } = await supabase.auth.getUser()
+    if (authError || !authenticatedUser) {
+      notify(authError?.message || 'Sign in to message artisans.')
+      return ''
+    }
+    if (user && authenticatedUser.id !== user.id) {
+      notify('Your session is still updating. Please try again.')
+      refresh()
+      return ''
+    }
+    if (artisans.find((artisan) => artisan.id === artisanId)?.isDemo
+      || (productId && productsRef.current.find((product) => product.id === productId)?.isDemo)) {
+      notify('Demo artisans and listings cannot receive messages.')
+      return ''
+    }
+    const customerName = user?.name || authenticatedUser.user_metadata?.full_name || authenticatedUser.email || 'Customer'
+    let query = supabase.from('conversations').select('id').eq('customer_id', authenticatedUser.id).eq('artisan_id', artisanId)
     query = productId ? query.eq('product_id', productId) : query.is('product_id', null)
-    const { data: found } = await query.maybeSingle()
+    const { data: found, error: lookupError } = await query.maybeSingle()
+    if (lookupError) {
+      notify(lookupError.message)
+      return ''
+    }
     if (found) return found.id
-    const { data, error } = await supabase.from('conversations').insert({ customer_id: user.id, artisan_id: artisanId, product_id: productId || null, customer_name: user.name }).select('id').single()
+    const { data, error } = await supabase.from('conversations').insert({ customer_id: authenticatedUser.id, artisan_id: artisanId, product_id: productId || null, customer_name: customerName }).select('id').single()
     if (error) { notify(error.message); return '' }
     refresh(); return data.id
-  }, [notify, refresh])
+  }, [artisans, notify, refresh])
 
   const sendMessage = useCallback(async (conversationId: string, text: string, options?: { kind?: MessageKind; offerAmount?: number; from?: 'customer' | 'artisan' }) => {
     const user = userRef.current
@@ -349,11 +463,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       return null
     }
     if (!user) { notify('Sign in to submit a bulk request.'); return null }
+    if ((request.productId && getProduct(request.productId)?.isDemo)
+      || (request.artisanId && getArtisan(request.artisanId)?.isDemo)) {
+      notify('Demo listings and artisans cannot receive bulk requests.')
+      return null
+    }
     const { data, error } = await createClient().from('bulk_order_requests').insert({ customer_id: user.id, artisan_id: request.artisanId || null, category_id: request.category, product_id: request.productId || null, business_name: request.business, contact_name: request.name, email: request.email, phone: request.phone, quantity: request.quantity, budget: request.budget, deadline: request.deadline || null, customization: request.customization }).select('*').single()
     if (error) { notify(error.message); return null }
     const created: BulkRequest = { ...request, id: data.id, date: data.created_at, status: 'Submitted' }
     setBulkRequests((prev) => [created, ...prev]); notify('Bulk order request submitted'); return created
-  }, [notify])
+  }, [getArtisan, getProduct, notify])
 
   const respondToBulkRequest = useCallback(async (id: string, amount: number, note: string) => {
     if (!configured) { notify('Configure Supabase to respond to bulk requests.'); return }
@@ -372,7 +491,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return { path, url: storageUrl(path) }
   }, [])
 
-  const addProduct = useCallback(async (product: Omit<Product, 'id' | 'slug' | 'rating' | 'reviews'>, imageFile?: File) => {
+  const addProduct = useCallback(async (product: Omit<Product, 'id' | 'slug' | 'rating' | 'reviews' | 'isDemo'>, imageFile?: File) => {
     if (!configured) {
       notify('Configure Supabase to publish products.')
       return null
@@ -396,11 +515,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
         image = uploaded.url
       } catch (reason) { notify(reason instanceof Error ? reason.message : 'Image upload failed') }
     }
-    const created: Product = { ...product, id: data.id, slug: data.slug, image, rating: 0, reviews: 0 }
+    const created: Product = { ...product, id: data.id, slug: data.slug, isDemo: false, image, rating: 0, reviews: 0 }
     setProducts((prev) => [created, ...prev]); notify('Product published to the marketplace'); return created
   }, [notify, uploadFile])
 
-  const updateProduct = useCallback(async (id: string, patch: Partial<Product>, imageFile?: File) => {
+  const updateProduct = useCallback(async (id: string, patch: Partial<Omit<Product, 'isDemo'>>, imageFile?: File) => {
     if (!configured) { notify('Configure Supabase to update products.'); return false }
     const dbPatch: Record<string, unknown> = {}
     if (patch.name !== undefined) dbPatch.name = patch.name
@@ -455,6 +574,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
   const submitReview = useCallback(async (productId: string, rating: number, title: string, body: string) => {
     if (!configured) { notify('Configure Supabase to submit a review.'); return }
+    if (productsRef.current.find((product) => product.id === productId)?.isDemo) {
+      notify('Demo listings cannot receive reviews.')
+      return
+    }
     const item = orders.flatMap((order) => order.items).find((line) => line.productId === productId && line.orderItemId)
     if (!item?.orderItemId) { notify('Reviews are available after purchase and delivery.'); return }
     const { error } = await createClient().from('reviews').insert({ product_id: productId, customer_id: userRef.current?.id, order_item_id: item.orderItemId, rating, title, body })
@@ -474,11 +597,11 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   }, [notify, uploadFile])
 
   const value = useMemo<StoreValue>(() => ({
-    products, artisans, cart, wishlist, orders, conversations, bulkRequests, toasts, currentUser, currentArtisanId, loading, catalogError,
+    products, artisans, cart, wishlist, orders, conversations, bulkRequests, toasts, currentUser, currentArtisanId, loading, catalogLoading, catalogError, retry: refresh,
     getProduct, getArtisan, addToCart, updateCartQuantity, removeFromCart, toggleWishlist, placeOrder,
     startConversation, sendMessage, markConversationRead, submitBulkRequest, respondToBulkRequest,
     addProduct, updateProduct, deleteProduct, updateOrderStatus, submitReview, uploadArtisanImage, notify,
-  }), [products, artisans, cart, wishlist, orders, conversations, bulkRequests, toasts, currentUser, currentArtisanId, loading, catalogError, getProduct, getArtisan, addToCart, updateCartQuantity, removeFromCart, toggleWishlist, placeOrder, startConversation, sendMessage, markConversationRead, submitBulkRequest, respondToBulkRequest, addProduct, updateProduct, deleteProduct, updateOrderStatus, submitReview, uploadArtisanImage, notify])
+  }), [products, artisans, cart, wishlist, orders, conversations, bulkRequests, toasts, currentUser, currentArtisanId, loading, catalogLoading, catalogError, refresh, getProduct, getArtisan, addToCart, updateCartQuantity, removeFromCart, toggleWishlist, placeOrder, startConversation, sendMessage, markConversationRead, submitBulkRequest, respondToBulkRequest, addProduct, updateProduct, deleteProduct, updateOrderStatus, submitReview, uploadArtisanImage, notify])
   return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>
 }
 

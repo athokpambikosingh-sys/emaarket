@@ -10,7 +10,7 @@ import { buttonClass } from '../shared'
 import { OrderProgress, StatCard, StatusBadge } from './order-progress'
 
 export function CustomerDashboard() {
-  const { orders, getProduct, wishlist, products, conversations, bulkRequests, currentUser, loading } = useStore()
+  const { orders, getProduct, wishlist, products, conversations, bulkRequests, currentUser, loading, catalogError, retry } = useStore()
   const myOrders = orders
   const myConversations = conversations
   const unread = myConversations.filter((c) => c.unread).length
@@ -19,6 +19,7 @@ export function CustomerDashboard() {
   const spent = myOrders.reduce((s, o) => s + o.total, 0)
 
   if (loading) return <div className="mx-auto max-w-7xl px-4 py-16 text-center text-sm text-muted-foreground" role="status" aria-live="polite">Loading your account…</div>
+  if (catalogError) return <div className="mx-auto max-w-7xl px-4 py-16 text-center text-sm text-destructive" role="alert">Could not load your account: {catalogError}<br /><button type="button" onClick={retry} className="mt-3 underline">Try again</button></div>
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 md:px-6">

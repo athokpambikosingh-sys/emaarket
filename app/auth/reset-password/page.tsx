@@ -2,8 +2,8 @@
 
 import Link from 'next/link'
 import { useState } from 'react'
-import { AuthCard } from '../login/page'
-import { createClient } from '@/lib/supabase/client'
+import { AuthCard } from '@/components/auth/auth-card'
+import { sendPasswordReset } from '../redirect-actions'
 
 export default function ResetPasswordPage() {
   const [message, setMessage] = useState('')
@@ -13,8 +13,8 @@ export default function ResetPasswordPage() {
     event.preventDefault(); setMessage(''); setError(''); setBusy(true)
     const email = String(new FormData(event.currentTarget).get('email'))
     try {
-      const { error } = await createClient().auth.resetPasswordForEmail(email, { redirectTo: `${window.location.origin}/auth/callback?next=/auth/update-password` })
-      if (error) setError(error.message); else setMessage('If an account exists for that email, a password reset link has been sent.')
+      const { error } = await sendPasswordReset(email)
+      if (error) setError(error); else setMessage('If an account exists for that email, a password reset link has been sent.')
     } catch (reason) { setError(reason instanceof Error ? reason.message : 'Password reset failed.') }
     finally { setBusy(false) }
   }

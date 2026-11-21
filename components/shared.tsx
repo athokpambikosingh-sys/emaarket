@@ -81,7 +81,7 @@ export function Badge({
 
 export function PageHeader({ eyebrow, title, description }: { eyebrow?: string; title: string; description?: string }) {
   return (
-    <div className="border-b border-border bg-secondary pattern-weave">
+    <div className="border-b border-transparent bg-secondary pattern-weave">
       <div className="mx-auto max-w-7xl px-4 py-12 md:px-6 md:py-16">
         {eyebrow && <p className="text-xs font-semibold uppercase tracking-[0.25em] text-gold">{eyebrow}</p>}
         <h1 className="mt-2 text-balance text-4xl font-semibold text-foreground md:text-6xl">{title}</h1>

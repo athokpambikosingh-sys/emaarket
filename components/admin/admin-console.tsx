@@ -18,6 +18,9 @@ export function AdminConsole() {
   const [loading, setLoading] = useState(true)
 
   const load = useCallback(async () => {
+    setLoading(true)
+    setError('')
+    try {
     const supabase = createClient()
     const [userRows, productRows, artisanRows, orderRows, bulkRows] = await Promise.all([
       supabase.from('profiles').select('id, full_name, role, created_at').order('created_at', { ascending: false }),
@@ -27,13 +30,17 @@ export function AdminConsole() {
       supabase.from('bulk_order_requests').select('id', { count: 'exact', head: true }),
     ])
     const issue = userRows.error || productRows.error || artisanRows.error || orderRows.error || bulkRows.error
-    if (issue) { setError(issue.message); setLoading(false); return }
+    if (issue) { setError(issue.message); return }
     setUsers((userRows.data || []) as UserRow[])
     setProducts((productRows.data || []) as ProductRow[])
     setArtisans((artisanRows.data || []) as ArtisanRow[])
     setActivity({ orders: orderRows.count || 0, bulkRequests: bulkRows.count || 0 })
     setError('')
-    setLoading(false)
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Could not load admin data.')
+    } finally {
+      setLoading(false)
+    }
   }, [])
 
   useEffect(() => { void load() }, [load])
@@ -61,7 +68,7 @@ export function AdminConsole() {
 
   return <div className="mt-8 grid gap-8">
     {loading && <p role="status" className="text-sm text-muted-foreground">Loading admin data…</p>}
-    {error && <p role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">{error}</p>}
+    {error && <div role="alert" className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive"><p>{error}</p><button type="button" onClick={() => void load()} className="mt-2 font-medium underline">Try again</button></div>}
     <section className="grid gap-4 sm:grid-cols-2">
       <Metric label="Orders" value={activity.orders} />
       <Metric label="Bulk requests" value={activity.bulkRequests} />

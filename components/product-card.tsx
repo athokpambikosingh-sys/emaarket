@@ -30,6 +30,11 @@ export function ProductCard({ product }: { product: Product }) {
           />
         </Link>
         <div className="absolute left-3 top-3 flex flex-col gap-1.5">
+          {product.isDemo && (
+            <span className="rounded-full bg-card px-2.5 py-0.5 text-xs font-medium text-foreground">
+              Demo preview - not for sale
+            </span>
+          )}
           {discount > 0 && (
             <span className="rounded-full bg-primary px-2.5 py-0.5 text-xs font-medium text-primary-foreground">
               {discount}% off
@@ -41,7 +46,7 @@ export function ProductCard({ product }: { product: Product }) {
             </span>
           )}
         </div>
-        <button
+        {!product.isDemo && <button
           type="button"
           onClick={() => toggleWishlist(product.id)}
           className="absolute right-3 top-3 flex size-9 items-center justify-center rounded-full bg-card/90 text-foreground shadow-sm transition-colors hover:text-primary"
@@ -49,8 +54,8 @@ export function ProductCard({ product }: { product: Product }) {
           aria-pressed={saved}
         >
           <Heart className={cn('size-4', saved && 'fill-primary text-primary')} />
-        </button>
-        <button
+        </button>}
+        {!product.isDemo && <button
           type="button"
           onClick={() => addToCart(product.id)}
           disabled={product.stock === 0}
@@ -58,7 +63,7 @@ export function ProductCard({ product }: { product: Product }) {
           aria-label={`Add ${product.name} to cart`}
         >
           <Plus className="size-4" />
-        </button>
+        </button>}
       </div>
       <div className="mt-3 flex flex-col gap-1">
         <p className="text-xs text-muted-foreground">

@@ -17,14 +17,19 @@ const useCases = [
 ]
 
 export function BulkOrderForm({ productId, artisanId }: { productId?: string; artisanId?: string }) {
-  const { getProduct, artisans, submitBulkRequest, currentUser } = useStore()
+  const { getProduct, artisans, submitBulkRequest, currentUser, catalogLoading } = useStore()
   const product = productId ? getProduct(productId) : undefined
+  const requestedArtisan = artisanId ? artisans.find((artisan) => artisan.id === artisanId) : undefined
   const [submitted, setSubmitted] = useState<BulkRequest | null>(null)
 
-  const defaultArtisan = product?.artisanId ?? (artisans.some((a) => a.id === artisanId) ? artisanId : '')
+  const demoTarget = Boolean(product?.isDemo || requestedArtisan?.isDemo)
+  const missingTarget = Boolean((productId && !product) || (artisanId && !requestedArtisan))
+  const availableArtisans = artisans.filter((artisan) => !artisan.isDemo)
+  const defaultArtisan = product?.artisanId ?? (availableArtisans.some((a) => a.id === artisanId) ? artisanId : '')
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
+    if (demoTarget) return
     const f = new FormData(e.currentTarget)
     const created = await submitBulkRequest({
       name: String(f.get('name')),
@@ -40,6 +45,14 @@ export function BulkOrderForm({ productId, artisanId }: { productId?: string; ar
       productId: product?.id,
     })
     if (created) setSubmitted(created)
+  }
+
+  if (catalogLoading) {
+    return <div className="mx-auto max-w-xl px-4 py-20 text-center text-sm text-muted-foreground" role="status">Loading catalog…</div>
+  }
+
+  if (missingTarget) {
+    return <div className="mx-auto max-w-xl px-4 py-20 text-center text-sm text-muted-foreground" role="alert">This product or artisan is unavailable. Return to the catalog and try again.</div>
   }
 
   if (submitted) {
@@ -59,6 +72,15 @@ export function BulkOrderForm({ productId, artisanId }: { productId?: string; ar
             Submit another
           </button>
         </div>
+      </div>
+    )
+  }
+
+  if (demoTarget) {
+    return (
+      <div className="mx-auto max-w-xl px-4 py-20 text-center" role="status">
+        <h2 className="font-serif text-3xl font-semibold">Demo preview - not for sale</h2>
+        <p className="mt-3 text-muted-foreground">Fictional demo listings and artisans cannot receive custom or bulk-order requests.</p>
       </div>
     )
   }
@@ -101,7 +123,7 @@ export function BulkOrderForm({ productId, artisanId }: { productId?: string; ar
           <Field label="Preferred artisan" hint="Optional">
             <select name="artisan" defaultValue={defaultArtisan} className={inputClass}>
               <option value="">Match me with the best fit</option>
-              {artisans.map((a) => (
+              {availableArtisans.map((a) => (
                 <option key={a.id} value={a.id}>
                   {a.name} — {a.craft}
                 </option>

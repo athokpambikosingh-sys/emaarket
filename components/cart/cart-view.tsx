@@ -21,6 +21,7 @@ export function CartView() {
     .map((item) => ({ item, product: getProduct(item.productId) }))
     .filter((l): l is { item: typeof l.item; product: NonNullable<typeof l.product> } => Boolean(l.product))
   const subtotal = lines.reduce((s, l) => s + l.product.price * l.item.quantity, 0)
+  const hasDemoItems = lines.some(({ product }) => product.isDemo)
   const shipping = subtotal >= FREE_SHIPPING || subtotal === 0 ? 0 : SHIPPING_FEE
   const total = subtotal + shipping
 
@@ -94,6 +95,7 @@ export function CartView() {
                   <div className="flex items-center rounded-full border border-input">
                     <button
                       type="button"
+                      disabled={product.isDemo}
                       onClick={() => updateCartQuantity(product.id, item.quantity - 1)}
                       className="flex size-9 items-center justify-center"
                       aria-label={`Decrease quantity of ${product.name}`}
@@ -103,6 +105,7 @@ export function CartView() {
                     <span className="w-6 text-center text-sm">{item.quantity}</span>
                     <button
                       type="button"
+                      disabled={product.isDemo}
                       onClick={() => updateCartQuantity(product.id, Math.min(product.stock, item.quantity + 1))}
                       className="flex size-9 items-center justify-center"
                       aria-label={`Increase quantity of ${product.name}`}
@@ -151,6 +154,11 @@ export function CartView() {
           </div>
 
           <p className="rounded-lg bg-muted px-3 py-2 text-xs text-muted-foreground">Orders are recorded in the marketplace. Online payment collection is not configured yet.</p>
+          {hasDemoItems && (
+            <p role="alert" className="rounded-lg border border-gold/50 bg-gold/10 px-3 py-2 text-sm">
+              Demo listings cannot be purchased. Remove them to continue to checkout.
+            </p>
+          )}
 
           <dl className="flex flex-col gap-2 border-t border-border pt-4 text-sm">
             <div className="flex justify-between">
@@ -170,7 +178,7 @@ export function CartView() {
             </div>
           </dl>
           {!currentUser && <p className="text-sm text-destructive">Sign in to save your cart and place an order. <Link className="underline" href="/auth/login?next=/cart">Sign in</Link></p>}
-          <button type="submit" disabled={!currentUser || checkingOut} className={cn(buttonClass.primary, 'h-12')}>
+          <button type="submit" disabled={!currentUser || checkingOut || hasDemoItems} className={cn(buttonClass.primary, 'h-12')}>
             Place order · {formatINR(total)}
           </button>
           <p className="text-center text-xs text-muted-foreground">Demo checkout — no payment is charged.</p>

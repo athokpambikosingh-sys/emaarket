@@ -27,14 +27,15 @@ import { Badge, buttonClass, Rating } from '../shared'
 const tabs = ['Description', 'Materials & size', 'Care'] as const
 
 export function ProductDetail({ slug }: { slug: string }) {
-  const { products, getArtisan, addToCart, wishlist, toggleWishlist, startConversation, orders, currentUser, loading } = useStore()
+  const { products, getArtisan, addToCart, wishlist, toggleWishlist, startConversation, orders, currentUser, catalogLoading, catalogError, retry } = useStore()
   const router = useRouter()
   const [qty, setQty] = useState(1)
   const [tab, setTab] = useState<(typeof tabs)[number]>('Description')
 
   const product = products.find((p) => p.slug === slug)
 
-  if (loading) return <div className="mx-auto max-w-7xl px-4 py-24 text-center text-sm text-muted-foreground" role="status" aria-live="polite">Loading product…</div>
+  if (catalogLoading) return <div className="mx-auto max-w-7xl px-4 py-24 text-center text-sm text-muted-foreground" role="status" aria-live="polite">Loading product…</div>
+  if (catalogError) return <div className="mx-auto max-w-xl px-4 py-24 text-center text-sm text-destructive" role="alert">Could not load this product: {catalogError}<br /><button type="button" onClick={retry} className={`${buttonClass.primary} mt-6`}>Try again</button></div>
 
   if (!product) {
     return (
@@ -90,15 +91,18 @@ export function ProductDetail({ slug }: { slug: string }) {
 
         <div className="flex flex-col">
           <div className="flex flex-wrap gap-2">
-            {product.customizable && <Badge tone="gold">Customisable</Badge>}
-            {product.bulkAvailable && <Badge>Bulk from {product.minBulkQty} pcs</Badge>}
-            <Badge tone="muted">Handmade in Manipur</Badge>
+            {product.isDemo && <Badge tone="gold">Demo preview - not for sale</Badge>}
+            {!product.isDemo && product.customizable && <Badge tone="gold">Customisable</Badge>}
+            {!product.isDemo && product.bulkAvailable && <Badge>Bulk from {product.minBulkQty} pcs</Badge>}
+            {!product.isDemo && <Badge tone="muted">Handmade in Manipur</Badge>}
           </div>
           <h1 className="mt-4 text-balance text-4xl font-semibold leading-tight md:text-5xl">{product.name}</h1>
           <div className="mt-3 flex items-center gap-4">
             <Rating value={product.rating} reviews={product.reviews} />
             <span className="text-sm text-muted-foreground">
-              {product.stock > 0 ? `${product.stock} in stock` : 'Sold out — available to order'}
+              {product.isDemo
+                ? 'Fictional listing for presentation only'
+                : product.stock > 0 ? `${product.stock} in stock` : 'Sold out — available to order'}
             </span>
           </div>
           <div className="mt-6 flex items-baseline gap-3">
@@ -107,10 +111,17 @@ export function ProductDetail({ slug }: { slug: string }) {
               <span className="text-lg text-muted-foreground line-through">{formatINR(product.originalPrice)}</span>
             )}
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">Inclusive of all taxes</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {product.isDemo ? 'Illustrative demo price only' : 'Inclusive of all taxes'}
+          </p>
 
           <p className="mt-6 leading-relaxed text-muted-foreground">{product.description}</p>
 
+          {product.isDemo ? (
+            <p className="mt-8 rounded-lg bg-secondary p-4 text-sm">
+              This fictional listing is for presentation only. Purchase, messaging, wishlist, and custom/bulk-order actions are disabled.
+            </p>
+          ) : <>
           <div className="mt-8 flex flex-wrap items-center gap-3">
             <div className="flex h-12 items-center rounded-full border border-input bg-card">
               <button
@@ -186,15 +197,16 @@ export function ProductDetail({ slug }: { slug: string }) {
               </span>
             </Link>
           </div>
+          </>}
 
-          <ul className="mt-6 flex flex-col gap-2 text-sm text-muted-foreground">
+          {!product.isDemo && <ul className="mt-6 flex flex-col gap-2 text-sm text-muted-foreground">
             <li className="flex items-center gap-2">
               <Truck className="size-4 text-gold" aria-hidden="true" /> Ships in 3–5 days from Manipur
             </li>
             <li className="flex items-center gap-2">
               <ShieldCheck className="size-4 text-gold" aria-hidden="true" /> Authenticity certified by the artisan
             </li>
-          </ul>
+          </ul>}
 
           <div className="mt-8 border-t border-border pt-6">
             <div role="tablist" aria-label="Product information" className="flex gap-6 border-b border-border">
@@ -238,7 +250,7 @@ export function ProductDetail({ slug }: { slug: string }) {
             <Image src={artisan.image || '/placeholder.svg'} alt={`Portrait of ${artisan.name}`} fill sizes="96px" className="object-cover" />
           </div>
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.25em] text-gold">Made by</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.25em] text-gold">{artisan.isDemo ? 'Fictional demo artisan' : 'Made by'}</p>
             <h2 className="mt-1 flex items-center gap-2 text-3xl font-semibold">
               {artisan.name}
               {artisan.verified && <BadgeCheck className="size-5 text-gold" aria-label="Verified artisan" />}
@@ -268,7 +280,7 @@ export function ProductDetail({ slug }: { slug: string }) {
         <h2 className="text-3xl font-semibold">Reviews</h2>
         <p className="mt-2 text-sm text-muted-foreground">{product.reviews ? `${product.rating.toFixed(1)} out of 5 · ${product.reviews} reviews` : 'No reviews yet.'}</p>
         <ProductReviews productId={product.id} />
-        {purchased ? <ReviewForm productId={product.id} /> : <p className="mt-4 text-sm text-muted-foreground">Verified buyers can leave a review after this order is delivered.</p>}
+        {!product.isDemo && (purchased ? <ReviewForm productId={product.id} /> : <p className="mt-4 text-sm text-muted-foreground">Verified buyers can leave a review after this order is delivered.</p>)}
       </section>
     </div>
   )

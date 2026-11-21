@@ -35,9 +35,6 @@ export function SiteHeader() {
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur">
-      <div className="pattern-band pb-3 pt-1.5 text-center text-xs tracking-wide text-primary-foreground">
-        Free shipping across India on orders above ₹2,500 · Every purchase goes directly to the artisan
-      </div>
       <div className="mx-auto flex max-w-7xl items-center gap-4 px-4 py-3 md:px-6">
         <button
           type="button"

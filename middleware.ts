@@ -20,4 +20,5 @@ export async function middleware(request: NextRequest) {
   return response
 }
 
-export const config = { matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'] }
+// Refresh auth cookies only on routes that need server-side auth checks.
+export const config = { matcher: ['/dashboard/:path*', '/auth/:path*'] }

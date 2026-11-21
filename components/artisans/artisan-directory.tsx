@@ -8,7 +8,7 @@ import { ArtisanCard } from '../artisan-card'
 import { inputClass } from '../shared'
 
 export function ArtisanDirectory() {
-  const { artisans, products, loading } = useStore()
+  const { artisans, products, catalogLoading, catalogError, retry } = useStore()
   const [query, setQuery] = useState('')
   const [district, setDistrict] = useState('All')
   const districts = ['All', ...Array.from(new Set(artisans.map((a) => a.district)))]
@@ -20,7 +20,8 @@ export function ArtisanDirectory() {
       (!q || [a.name, a.craft, a.location, ...a.specialization].join(' ').toLowerCase().includes(q)),
   )
 
-  if (loading) return <div className="mx-auto max-w-7xl px-4 py-16 text-center text-sm text-muted-foreground" role="status" aria-live="polite">Loading artisans…</div>
+  if (catalogLoading) return <div className="mx-auto max-w-7xl px-4 py-16 text-center text-sm text-muted-foreground" role="status" aria-live="polite">Loading artisans…</div>
+  if (catalogError) return <div className="mx-auto max-w-7xl px-4 py-16 text-center text-sm text-destructive" role="alert">Could not load artisans: {catalogError}<br /><button type="button" onClick={retry} className="mt-3 underline">Try again</button></div>
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-10 md:px-6">

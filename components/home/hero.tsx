@@ -60,7 +60,7 @@ export function Hero() {
             <p className="font-serif text-lg font-semibold leading-tight">Thoibi Devi</p>
             <p className="text-xs text-muted-foreground">Weaving Phanek in Wangkhei for 22 years</p>
             <Link href="/artisans/thoibi-devi-laishram" className="mt-2 inline-flex text-xs font-medium text-primary hover:underline">
-              Read her story
+              Read my story
             </Link>
           </div>
         </div>

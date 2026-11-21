@@ -16,8 +16,8 @@ export function ArtisanStories() {
       <div className="mx-auto max-w-7xl px-4 md:px-6">
         <div className="flex flex-col justify-between gap-4 md:flex-row md:items-end">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.25em] text-gold">Artisan stories</p>
-            <h2 className="mt-2 text-balance text-4xl font-semibold md:text-5xl">The hands behind every piece</h2>
+            <p className="text-xs font-semibold uppercase tracking-[0.25em] text-gold">Meet the makers</p>
+            <h2 className="mt-2 text-balance text-4xl font-semibold md:text-5xl">Artisan Stories</h2>
           </div>
           <Link href="/artisans" className="inline-flex items-center gap-1.5 text-sm font-medium text-gold hover:underline">
             All artisans <ArrowRight className="size-4" />
@@ -42,7 +42,7 @@ export function ArtisanStories() {
               <h3 className="text-3xl font-semibold">{featured.name}</h3>
               <p className="text-sm leading-relaxed text-primary-foreground/80">{featured.story}</p>
               <Link href={`/artisans/${featured.slug}`} className={`${buttonClass.gold} mt-auto self-start`}>
-                Visit her studio
+                Visit their studio
               </Link>
             </div>
           </article>
