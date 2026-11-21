@@ -122,10 +122,10 @@ export function ArtisanProfile({ artisanId }: { artisanId: string }) {
                 {artisan.cooperative}
               </li>
             )}
-            <li className="flex items-start gap-3">
+            {artisan.joined && !Number.isNaN(Date.parse(artisan.joined)) && <li className="flex items-start gap-3">
               <Calendar className="mt-0.5 size-4 text-gold" aria-hidden="true" />
               On Emaarket since {formatDate(artisan.joined)}
-            </li>
+            </li>}
           </ul>
           {artisan.verified && (
             <Badge tone="gold" className="mt-6">

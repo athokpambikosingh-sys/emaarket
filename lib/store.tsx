@@ -3,7 +3,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
 import { createClient } from './supabase/client'
 import { uid } from './format'
-import type { Artisan, BulkRequest, CartItem, Conversation, MessageKind, Order, OrderStatus, Product } from './types'
+import demoFixtures from '../supabase/demo/fixtures.json'
+import type { Artisan, BulkRequest, CartItem, CategoryId, Conversation, MessageKind, Order, OrderStatus, Product } from './types'
 
 type Toast = { id: string; message: string }
 type StoreUser = { id: string; name: string; email: string; role: 'customer' | 'artisan' | 'admin' }
@@ -37,6 +38,76 @@ function isMissingDemoMarkerColumn(error: { code?: string; message: string; deta
 }
 function isDemoArtisanSlug(slug: string) { return /^demo-artisan-(0[1-9]|10)$/.test(slug) }
 function isDemoProductSlug(slug: string) { return slug.startsWith('demo-seed-') }
+function fixtureCategory(value: string): CategoryId {
+  switch (value) {
+    case 'phanek':
+    case 'innaphi':
+    case 'shawls':
+    case 'bamboo':
+    case 'pottery':
+    case 'accessories':
+      return value
+    default:
+      throw new Error(`Unknown demo fixture category: ${value}`)
+  }
+}
+function mapDemoCatalogue(existingArtisans: Artisan[]) {
+  const artisans = [...existingArtisans]
+  const artisansBySlug = new Map(artisans.map((artisan) => [artisan.slug, artisan]))
+
+  for (const fixture of demoFixtures.artisans) {
+    if (artisansBySlug.has(fixture.slug)) continue
+    const artisan: Artisan = {
+      id: `demo-${fixture.fixtureId}`,
+      slug: fixture.slug,
+      isDemo: true,
+      name: fixture.displayName,
+      location: fixture.location,
+      district: fixture.district,
+      craft: fixture.craft,
+      specialization: [],
+      experienceYears: 0,
+      bio: fixture.bio,
+      story: fixture.story,
+      image: '/placeholder.svg',
+      rating: 0,
+      languages: [],
+      phone: '',
+      email: '',
+      verified: false,
+      joined: '',
+    }
+    artisans.push(artisan)
+    artisansBySlug.set(artisan.slug, artisan)
+  }
+
+  const products: Product[] = demoFixtures.products.map((fixture) => {
+    const artisan = artisansBySlug.get(fixture.artisanSlug)
+    if (!artisan) throw new Error(`Missing demo fixture artisan: ${fixture.artisanSlug}`)
+
+    return {
+      id: `demo-${fixture.fixtureId}`,
+      slug: fixture.slug,
+      isDemo: true,
+      name: fixture.name,
+      category: fixtureCategory(fixture.categoryId),
+      price: fixture.price,
+      image: '/placeholder.svg',
+      description: fixture.description,
+      artisanId: artisan.id,
+      rating: 0,
+      reviews: 0,
+      stock: demoFixtures.inventoryQuantity,
+      material: fixture.material,
+      dimensions: '',
+      care: '',
+      customizable: false,
+      bulkAvailable: demoFixtures.bulkAvailable,
+    }
+  })
+
+  return { artisans, products }
+}
 function titleStatus(value: string): OrderStatus { return (value[0].toUpperCase() + value.slice(1)) as OrderStatus }
 function bulkStatus(value: string): BulkRequest['status'] {
   const statuses: Record<string, BulkRequest['status']> = { submitted: 'Submitted', quoted: 'Quoted', accepted: 'Accepted', declined: 'Declined' }
@@ -207,8 +278,13 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           bulkAvailable: p.bulk_available, minBulkQty: p.min_bulk_quantity || undefined, featured: p.featured,
         }
       })
-      setArtisans(mappedArtisans)
-      setProducts(mappedProducts)
+      const demoFallback = !productResult.error && productResult.data?.length === 0
+        ? mapDemoCatalogue(mappedArtisans)
+        : null
+      const displayArtisans = demoFallback?.artisans || mappedArtisans
+      const displayProducts = demoFallback?.products || mappedProducts
+      setArtisans(displayArtisans)
+      setProducts(displayProducts)
       setCatalogLoading(false)
       const { appUser, myArtisanId } = await identityPromise
       setCurrentUser(appUser)
